@@ -6,7 +6,7 @@
 #define M 512
 #define N 512
 #define P 512
-#define MAXTHREADS 256
+#define MAXTHREADS 4096
 
 // global variables
 int nthreads;
