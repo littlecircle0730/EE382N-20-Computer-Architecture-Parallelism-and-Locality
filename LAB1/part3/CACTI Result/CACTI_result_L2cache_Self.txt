@@ -37,10 +37,6 @@ iostate                       : WRITE
 dram_ecc                      : NO_ECC
 io_type                     : DDR3
 dram_dimm                      : UDIMM
-check point 0
-check point 3
-check point 4
-check point 5
 IO Area (sq.mm) = inf
 check point 6
 IO Timing Margin (ps) = -14.1667
