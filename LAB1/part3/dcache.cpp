@@ -98,6 +98,8 @@ typedef enum
     COUNTER_NUM
 } COUNTER;
 
+ADDRINT * dirty_addr_arr = (ADDRINT*)(malloc(2*sizeof(ADDRINT)));
+UINT32 * write_back_arr = (UINT32*)(malloc(2*sizeof(UINT32)));
 
 
 typedef  COUNTER_ARRAY<UINT64, COUNTER_NUM> COUNTER_HIT_MISS;
@@ -112,10 +114,14 @@ COMPRESSOR_COUNTER<ADDRINT, UINT32, COUNTER_HIT_MISS> profile;
 VOID LoadMulti(ADDRINT addr, UINT32 size, UINT32 instId)
 {
     // first level D-cache
-    const BOOL dl1Hit = dl1->Access(addr, size, CACHE_BASE::ACCESS_TYPE_LOAD);
+    ADDRINT *dirty_addr = {};
+    UINT32 *write_back = {};
+    UINT32 arr_size;
+    const BOOL dl1Hit = dl1->Access(addr, size, CACHE_BASE::ACCESS_TYPE_LOAD, dirty_addr, write_back, arr_size);
 
     const COUNTER counter = dl1Hit ? COUNTER_HIT : COUNTER_MISS;
-    profile[instId][counter]++;
+	std::cout << "Profile!\n";
+	profile[instId][counter]++;
 }
 
 /* ===================================================================== */
@@ -123,9 +129,13 @@ VOID LoadMulti(ADDRINT addr, UINT32 size, UINT32 instId)
 VOID StoreMulti(ADDRINT addr, UINT32 size, UINT32 instId)
 {
     // first level D-cache
-    const BOOL dl1Hit = dl1->Access(addr, size, CACHE_BASE::ACCESS_TYPE_STORE);
+    ADDRINT *dirty_addr = {};
+    UINT32 *write_back = {};
+    UINT32 arr_size;
+    const BOOL dl1Hit = dl1->Access(addr, size, CACHE_BASE::ACCESS_TYPE_STORE, dirty_addr, write_back, arr_size);
 
     const COUNTER counter = dl1Hit ? COUNTER_HIT : COUNTER_MISS;
+	std::cout << "Profile!\n";
     profile[instId][counter]++;
 }
 
@@ -135,9 +145,12 @@ VOID LoadSingle(ADDRINT addr, UINT32 instId)
 {
     // @todo we may access several cache lines for 
     // first level D-cache
-    const BOOL dl1Hit = dl1->AccessSingleLine(addr, CACHE_BASE::ACCESS_TYPE_LOAD);
+    ADDRINT dirty_addr = 0xFFFFFFFF;
+    UINT32 write_back;
+    const BOOL dl1Hit = dl1->AccessSingleLine(addr, CACHE_BASE::ACCESS_TYPE_LOAD, dirty_addr, write_back);
 
     const COUNTER counter = dl1Hit ? COUNTER_HIT : COUNTER_MISS;
+	std::cout << "Profile!\n";
     profile[instId][counter]++;
 }
 /* ===================================================================== */
@@ -146,9 +159,12 @@ VOID StoreSingle(ADDRINT addr, UINT32 instId)
 {
     // @todo we may access several cache lines for 
     // first level D-cache
-    const BOOL dl1Hit = dl1->AccessSingleLine(addr, CACHE_BASE::ACCESS_TYPE_STORE);
+    ADDRINT dirty_addr = 0xFFFFFFFF;
+    UINT32 write_back;
+    const BOOL dl1Hit = dl1->AccessSingleLine(addr, CACHE_BASE::ACCESS_TYPE_STORE, dirty_addr, write_back);
 
     const COUNTER counter = dl1Hit ? COUNTER_HIT : COUNTER_MISS;
+	std::cout << "Profile!\n";
     profile[instId][counter]++;
 }
 
@@ -156,32 +172,117 @@ VOID StoreSingle(ADDRINT addr, UINT32 instId)
 
 VOID LoadMultiFast(ADDRINT addr, UINT32 size)
 {
-    const BOOL dl1Hit = dl1->Access(addr, size, CACHE_BASE::ACCESS_TYPE_LOAD);
-    if (!dl1Hit) dl2->Access(addr, size, CACHE_BASE::ACCESS_TYPE_LOAD);
+	//std::cout << "LOAD MULTI FAST\n";
+    //ADDRINT * dirty_addr_arr;// = (ADDRINT*)(malloc(size));    
+	ADDRINT adr;
+    //UINT32 * write_back_arr;// = (UINT32*)(malloc(size));
+    UINT32 wb, arr_size;
+	//dirty_addr_arr = (ADDRINT*) malloc(2*sizeof(ADDRINT));
+	//write_back_arr = (UINT32*) malloc(2*sizeof(UINT32));
+	ADDRINT* dirty_addr_tmp = dirty_addr_arr;
+	UINT32* write_back_tmp = write_back_arr;
+    const BOOL dl1Hit = dl1->Access(addr, size, CACHE_BASE::ACCESS_TYPE_LOAD, dirty_addr_arr, write_back_arr, arr_size);
+	if (!dl1Hit)
+	{
+		for (UINT32 i = 0; i < arr_size; i++) 
+		{
+			adr = 0xFFFFFFFF;
+			if (*write_back_arr) 
+			{ 
+				//std::cout << "	Write Back to L2...\n";
+				dl2->AccessSingleLine(*dirty_addr_arr, CACHE_BASE::ACCESS_TYPE_LOAD, adr, wb); 
+			}
+			write_back_arr ++;
+			dirty_addr_arr ++;
+		}
+		dl2->Access(addr, size, CACHE_BASE::ACCESS_TYPE_LOAD, dirty_addr_arr, write_back_arr, arr_size);
+	}
+	//free (dirty_addr_arr);
+	//free (write_back_arr);
+	dirty_addr_arr = dirty_addr_tmp;
+	write_back_arr = write_back_tmp;
+	//std::cout << "END LOAD MULTI FAST\n\n\n";
 }
 
 /* ===================================================================== */
 
 VOID StoreMultiFast(ADDRINT addr, UINT32 size)
 {
-    const BOOL dl1Hit = dl1->Access(addr, size, CACHE_BASE::ACCESS_TYPE_STORE);
-    if (!dl1Hit) dl2->Access(addr, size, CACHE_BASE::ACCESS_TYPE_STORE);
+	//std::cout << "STORE MULTI FAST\n";
+    //ADDRINT * dirty_addr_arr;// = (ADDRINT*)(malloc(size));
+    ADDRINT adr;
+    //UINT32 * write_back_arr;// = (UINT32*)(malloc(size));
+    UINT32 wb, arr_size;
+	//dirty_addr_arr = (ADDRINT*) malloc(2*sizeof(ADDRINT));
+	//write_back_arr = (UINT32*) malloc(2*sizeof(UINT32));
+	ADDRINT* dirty_addr_tmp = dirty_addr_arr;
+	UINT32* write_back_tmp = write_back_arr;
+    const BOOL dl1Hit = dl1->Access(addr, size, CACHE_BASE::ACCESS_TYPE_STORE, dirty_addr_arr, write_back_arr, arr_size);
+	if (!dl1Hit) 
+	{
+		for (UINT32 i = 0; i < arr_size; i++) 
+		{
+			adr = 0xFFFFFFFF;
+			if (*write_back_arr) 
+			{ 
+				//std::cout << "	Write Back to L2...\n";
+				dl2->AccessSingleLine(*dirty_addr_arr, CACHE_BASE::ACCESS_TYPE_STORE, adr, wb); 
+			}
+			write_back_arr ++;
+			dirty_addr_arr ++;
+		}
+		dl2->Access(addr, size, CACHE_BASE::ACCESS_TYPE_STORE, dirty_addr_arr, write_back_arr, arr_size);
+	}
+	//free (dirty_addr_arr);
+	//free (write_back_arr);
+	dirty_addr_arr = dirty_addr_tmp;
+	write_back_arr = write_back_tmp;
+	//std::cout << "END STORE MULTI FAST\n\n\n";
 }
 
 /* ===================================================================== */
 
 VOID LoadSingleFast(ADDRINT addr)
 {
-    const BOOL dl1Hit = dl1->AccessSingleLine(addr, CACHE_BASE::ACCESS_TYPE_LOAD);    
-    if (!dl1Hit) dl2->AccessSingleLine(addr, CACHE_BASE::ACCESS_TYPE_LOAD);
+	//std::cout << "LOAD SINGLE FAST\n";
+    ADDRINT dirty_addr = 0x0;
+    ADDRINT adr = 0xFFFFFFFF;
+    UINT32 write_back, wb;
+    const BOOL dl1Hit = dl1->AccessSingleLine(addr, CACHE_BASE::ACCESS_TYPE_LOAD, dirty_addr, write_back);    
+	if (!dl1Hit)
+	{
+		// Write back to L2 from L1 since L1 has a load miss
+		// MAYBE CHANGE STORE -> LOAD?
+		if (write_back) 
+		{ 
+			//std::cout << "	Write Back to L2...\n";
+			dl2->AccessSingleLine(dirty_addr, CACHE_BASE::ACCESS_TYPE_LOAD, adr, wb); 
+		}
+		dl2->AccessSingleLine(addr, CACHE_BASE::ACCESS_TYPE_LOAD, dirty_addr, write_back);
+	}
+	//std::cout << "END LOAD SINGLE FAST\n\n\n";
 }
 
 /* ===================================================================== */
 
 VOID StoreSingleFast(ADDRINT addr)
 {
-    const BOOL dl1Hit = dl1->AccessSingleLine(addr, CACHE_BASE::ACCESS_TYPE_STORE);    
-    if (!dl1Hit) dl2->AccessSingleLine(addr, CACHE_BASE::ACCESS_TYPE_STORE);
+	//std::cout << "STORE SINGLE FAST\n";
+    ADDRINT dirty_addr = 0x0;
+    ADDRINT adr = 0xFFFFFFFF;
+    UINT32 write_back, wb;
+    // If it's a L1 miss, then L1 will already be replaced in here but L2 does not yet.
+    const BOOL dl1Hit = dl1->AccessSingleLine(addr, CACHE_BASE::ACCESS_TYPE_STORE, dirty_addr, write_back);    
+    if (!dl1Hit) 
+    {
+        if (write_back) 
+		{ 
+			//std::cout << "	Write Back to L2...\n";
+			dl2->AccessSingleLine(dirty_addr, CACHE_BASE::ACCESS_TYPE_STORE, adr, wb);
+		}
+        dl2->AccessSingleLine(addr, CACHE_BASE::ACCESS_TYPE_STORE, dirty_addr, write_back);
+    }
+	//std::cout << "END STORE SINGLE FAST\n\n\n";
 }
 
 
@@ -344,18 +445,18 @@ int main(int argc, char *argv[])
     outFile.open(KnobOutputFile.Value().c_str());
 
     dl1 = new DL1::CACHE("L1 Data Cache", 
-                         //KnobCacheSize.Value() * KILO,
-			 //KnobLineSize.Value(),
-                         //KnobAssociativity.Value());
                          32 * KILO,
-			 32, 4);
+						 32, 4);
+                         //KnobCacheSize.Value() * KILO,
+						 //KnobLineSize.Value(),
+                         //KnobAssociativity.Value());
 
     dl2 = new DL2::CACHE("L2 Data Cache", 
+                         2048 * KILO,
+					 	 64, 16);
                          //KnobCacheSize.Value() * KILO,
                          //KnobLineSize.Value(),
                          //KnobAssociativity.Value());
-                         2048 * KILO,
-			 64, 16);
     
     profile.SetKeyName("iaddr          ");
     profile.SetCounterName("dcache:miss        dcache:hit");
